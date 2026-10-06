@@ -4,3 +4,7 @@ data/raw/
 __pycache__/
 *.py[cod]
 *.class
+# Generated V2 datasets
+data/processed/v2/features.csv
+data/processed/v2/features.parquet
+data/processed/v2/v2_consumption.csv
