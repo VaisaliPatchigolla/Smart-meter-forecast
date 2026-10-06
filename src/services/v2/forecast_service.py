@@ -121,8 +121,16 @@ class ForecastService:
     def recursive_forecast(self, household_id: str, forecast_origin=None) -> dict:
         _, hh_data = self.validate_household(household_id, forecast_origin)
         
+        # Exclude known incomplete final day from forecasting context
+        incomplete_date = pd.to_datetime('2014-02-28')
+        hh_data = hh_data[hh_data['date'] != incomplete_date].copy()
+        
         latest_date = hh_data['date'].max()
         valid_history = hh_data.dropna(subset=['consumption_kwh'])
+        
+        if len(valid_history) < 28:
+            raise InsufficientHistoryError(f"Household {household_id} has insufficient valid history after excluding incomplete dates.")
+
         
         sum_actual = valid_history['consumption_kwh'].sum()
         count_actual = len(valid_history)

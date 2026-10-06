@@ -13,6 +13,7 @@ interface ChartPoint {
   actual_kwh: number | null;
   expected_kwh: number | null;
   isConnectionPoint: boolean;
+  isPartialDay: boolean;
 }
 
 const CustomForecastDot = (props: any) => {
@@ -27,9 +28,9 @@ const BoundaryLabel = (props: any) => {
   if (!viewBox) return null;
   return (
     <g>
-      <text x={viewBox.x - 8} y={viewBox.y + 15} textAnchor="end" fontSize={10} fontWeight="bold" fill="#475569">Feb 28, 2014</text>
+      <text x={viewBox.x - 8} y={viewBox.y + 15} textAnchor="end" fontSize={10} fontWeight="bold" fill="#475569">Feb 27, 2014</text>
       <text x={viewBox.x - 8} y={viewBox.y + 27} textAnchor="end" fontSize={9} fill="#64748b">Last actual</text>
-      <text x={viewBox.x + 8} y={viewBox.y + 15} textAnchor="start" fontSize={10} fontWeight="bold" fill="#10b981">Mar 01, 2014</text>
+      <text x={viewBox.x + 8} y={viewBox.y + 15} textAnchor="start" fontSize={10} fontWeight="bold" fill="#10b981">Feb 28, 2014</text>
       <text x={viewBox.x + 8} y={viewBox.y + 27} textAnchor="start" fontSize={9} fill="#10b981">First predicted</text>
     </g>
   );
@@ -44,6 +45,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
           {new Date(data.fullDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
         </p>
         <div className="space-y-1">
+          {data.isPartialDay && (
+            <div className="text-amber-600 dark:text-amber-400 font-medium text-xs mb-2">
+              <p>Feb 28 — Partial-day data</p>
+              <p className="opacity-80">Only 30 minutes of source readings available.</p>
+            </div>
+          )}
           {data.actual_kwh !== null && (
             <div className="flex justify-between items-center gap-4 text-slate-700 dark:text-slate-300">
               <span className="flex items-center gap-2">
@@ -164,17 +171,20 @@ export default function Dashboard() {
     const combined: Record<string, ChartPoint> = {};
     
     history.history.forEach(pt => {
+      if (pt.date === '2014-02-28') return; // Completely drop from plotting history
       combined[pt.date] = {
         dateStr: new Date(pt.date).toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
         timestamp: new Date(pt.date).getTime(),
         fullDate: pt.date,
         actual_kwh: pt.consumption_kwh,
         expected_kwh: null,
-        isConnectionPoint: false
+        isConnectionPoint: false,
+        isPartialDay: false
       };
     });
     
     forecast.forecast.forEach(pt => {
+      const isPartial = pt.date === '2014-02-28';
       if (!combined[pt.date]) {
         combined[pt.date] = {
           dateStr: new Date(pt.date).toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
@@ -182,19 +192,22 @@ export default function Dashboard() {
           fullDate: pt.date,
           actual_kwh: null,
           expected_kwh: pt.predicted_consumption_kwh,
-          isConnectionPoint: false
+          isConnectionPoint: false,
+          isPartialDay: isPartial
         };
       } else {
         combined[pt.date].expected_kwh = pt.predicted_consumption_kwh;
+        combined[pt.date].isPartialDay = isPartial;
       }
     });
     
     // Connect the lines
-    if (history.history.length > 0) {
-      const lastHistDate = history.history[history.history.length - 1].date;
-      if (combined[lastHistDate]) {
-        combined[lastHistDate].expected_kwh = combined[lastHistDate].actual_kwh;
-        combined[lastHistDate].isConnectionPoint = true;
+    const completeHistory = history.history.filter(pt => pt.date !== '2014-02-28');
+    if (completeHistory.length > 0) {
+      const lastCompleteDate = completeHistory[completeHistory.length - 1].date;
+      if (combined[lastCompleteDate]) {
+        combined[lastCompleteDate].expected_kwh = combined[lastCompleteDate].actual_kwh;
+        combined[lastCompleteDate].isConnectionPoint = true;
       }
     }
     
@@ -228,12 +241,13 @@ export default function Dashboard() {
     }
   }, [fullChartData]);
 
-  const lastActualDate = history?.history.length 
-    ? new Date(history.history[history.history.length - 1].date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })
+  const completeHistoryForHeader = history?.history.filter(pt => pt.date !== '2014-02-28') || [];
+  const lastActualDate = completeHistoryForHeader.length 
+    ? new Date(completeHistoryForHeader[completeHistoryForHeader.length - 1].date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })
     : '—';
     
-  const forecastBoundaryStr = history?.history.length 
-    ? new Date(history.history[history.history.length - 1].date).toLocaleDateString('en-US', { month: 'short', day: '2-digit' })
+  const forecastBoundaryStr = completeHistoryForHeader.length 
+    ? new Date(completeHistoryForHeader[completeHistoryForHeader.length - 1].date).toLocaleDateString('en-US', { month: 'short', day: '2-digit' })
     : undefined;
 
   const refreshPage = () => {
@@ -247,11 +261,13 @@ export default function Dashboard() {
       <header className="bg-[#0f294d] text-white px-6 py-2.5 flex items-center justify-between shadow-md shrink-0">
         <div className="flex items-center gap-4">
           <BarChart2 className="w-6 h-6 text-blue-400" />
-          <h1 className="text-lg font-semibold tracking-wide">Smart Meter Consumption Forecasting V2</h1>
-          <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded font-medium tracking-wide">MVP Dashboard</span>
+          <div className="flex flex-col">
+            <h1 className="text-lg font-semibold tracking-wide leading-tight">Smart Meter Consumption Forecasting</h1>
+            <span className="text-xs text-blue-200">Household Consumption Insights & 7-Day Forecast</span>
+          </div>
         </div>
         <div className="flex items-center gap-3 text-xs text-blue-100">
-          <span>Last Updated: 28 Feb 2014 11:30 AM</span>
+          <span>Data Through: 28 Feb 2014</span>
           <button onClick={refreshPage} className="hover:text-white transition-colors" aria-label="Refresh">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -358,7 +374,7 @@ export default function Dashboard() {
               <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-3">
                 <div className="flex items-center gap-2 mb-2">
                   <TrendingUp className="w-4 h-4 text-slate-700 dark:text-slate-300" />
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">Historical Navigation</h3>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">Explore History</h3>
                 </div>
                 <div className="flex items-center gap-1 mb-1">
                   <button onClick={() => scrollToEdges('left')} className="p-1 flex-shrink-0 border border-slate-300 dark:border-slate-600 rounded bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 disabled:opacity-50" disabled={startIndex === 0}>
@@ -402,7 +418,7 @@ export default function Dashboard() {
               
               <div className="flex-1 p-3 relative flex flex-col">
                 {/* Custom Legend to match screenshot */}
-                <div className="flex gap-6 mb-4 ml-8 shrink-0">
+                <div className="flex gap-6 mb-4 ml-8 shrink-0 flex-wrap">
                   <div className="flex items-center gap-2">
                     <div className="flex items-center">
                       <div className="w-5 h-0.5 bg-blue-500"></div>
@@ -538,6 +554,46 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* 3.5 INSIGHTS AND EXPLANATION */}
+        {forecast && (
+          <div className="flex flex-col lg:flex-row gap-4 items-stretch shrink-0">
+            {/* Consumption Insights */}
+            <div className="flex-[2] bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
+              <h3 className="font-bold text-[#0f294d] dark:text-white text-sm mb-3">Consumption Insights</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Expected 7-Day Total</p>
+                  <p className="font-black text-lg text-slate-900 dark:text-white">{forecast.insights.total_7d_consumption.toFixed(2)} <span className="text-[10px] font-semibold text-slate-500">kWh</span></p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Expected Avg / Day</p>
+                  <p className="font-black text-lg text-slate-900 dark:text-white">{forecast.insights.average_daily_consumption.toFixed(2)} <span className="text-[10px] font-semibold text-slate-500">kWh</span></p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Peak Expected</p>
+                  <p className="font-black text-lg text-slate-900 dark:text-white">{forecast.insights.peak_consumption_kwh.toFixed(2)} <span className="text-[10px] font-semibold text-slate-500">kWh</span></p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Lowest Expected</p>
+                  <p className="font-black text-lg text-slate-900 dark:text-white">{forecast.insights.lowest_consumption_kwh.toFixed(2)} <span className="text-[10px] font-semibold text-slate-500">kWh</span></p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Trend</p>
+                  <p className="font-black text-lg text-slate-900 dark:text-white capitalize">{forecast.insights.trend}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* About this forecast */}
+            <div className="flex-1 bg-blue-50 dark:bg-slate-800/50 rounded-xl border border-blue-100 dark:border-slate-700 p-4">
+              <h3 className="font-bold text-[#0f294d] dark:text-blue-400 text-sm mb-2">About this forecast</h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                This forecast uses historical household electricity consumption patterns to estimate consumption for the next 7 days. Forecast performance is based on historical backtesting, and actual future performance may vary.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* 4. BOTTOM ROW: Model Performance */}
         {metrics && (
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap md:flex-row items-center justify-between p-3 px-5 gap-4 shrink-0">
@@ -551,7 +607,7 @@ export default function Dashboard() {
 
             <div className="flex flex-wrap items-center justify-between gap-6 flex-1 px-4">
               <div className="flex-1 text-center">
-                <p className="text-[10px] font-bold text-slate-500 uppercase">V2 MAE</p>
+                <p className="text-[10px] font-bold text-slate-500 uppercase">MAE</p>
                 <p className="font-black text-lg text-slate-900 dark:text-white leading-tight">
                   {metrics.v2_mae_7d.toFixed(2)} <span className="text-[10px] font-semibold text-slate-500">kWh/day</span>
                 </p>
@@ -560,9 +616,9 @@ export default function Dashboard() {
               <div className="hidden sm:block w-px h-8 bg-slate-200 dark:bg-slate-700"></div>
               
               <div className="flex-1 text-center">
-                <p className="text-[10px] font-bold text-slate-500 uppercase">Baseline MAE</p>
+                <p className="text-[10px] font-bold text-slate-500 uppercase">Seasonal-naive baseline</p>
                 <p className="font-black text-lg text-slate-900 dark:text-white leading-tight">
-                  {(metrics.v2_mae_7d / (1 - metrics.improvement_pct/100)).toFixed(2)} <span className="text-[10px] font-semibold text-slate-500">kWh/day</span>
+                  {metrics.baseline_mae_7d.toFixed(2)} <span className="text-[10px] font-semibold text-slate-500">kWh/day</span>
                 </p>
               </div>
 

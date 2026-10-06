@@ -104,9 +104,9 @@ def get_metrics():
         "model_type": "LightGBM (Recursive Autoregressive)",
         "model_version": "v2_demand_history",
         "forecast_horizon_days": 7,
-        "v2_mae_7d": 2.3101,
-        "baseline_mae_7d": 2.8184,
-        "improvement_pct": 18.04,
+        "v2_mae_7d": 2.5320,
+        "baseline_mae_7d": 3.0898,
+        "improvement_pct": 18.05,
         "disclaimer": "Metrics represent historical backtest performance. Actual future error may vary."
     }
 

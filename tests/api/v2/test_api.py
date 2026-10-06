@@ -55,9 +55,9 @@ class TestV2API(unittest.TestCase):
     def test_07_metrics_parity(self):
         response = self.client.get("/metrics")
         data = response.json()
-        self.assertEqual(data["v2_mae_7d"], 2.3101)
-        self.assertEqual(data["baseline_mae_7d"], 2.8184)
-        self.assertEqual(data["improvement_pct"], 18.04)
+        self.assertEqual(data["v2_mae_7d"], 2.5320)
+        self.assertEqual(data["baseline_mae_7d"], 3.0898)
+        self.assertEqual(data["improvement_pct"], 18.05)
 
     def test_08_invalid_household_returns_404(self):
         response = self.client.get("/forecast/INVALID_ID_999")
@@ -84,6 +84,30 @@ class TestV2API(unittest.TestCase):
         # 11. forecast insights are present
         self.assertIn("insights", data)
         self.assertIn("total_7d_consumption", data["insights"])
+
+    def test_09b_integration_mac000020_forecast_dates(self):
+        response = self.client.get("/forecast/MAC000020")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        # Forecast should start on 2014-02-28 and end on 2014-03-06
+        self.assertEqual(data["forecast_start"], "2014-02-28")
+        self.assertEqual(data["forecast_end"], "2014-03-06")
+        self.assertEqual(len(data["forecast"]), 7)
+        self.assertEqual(data["forecast"][0]["date"], "2014-02-28")
+        self.assertEqual(data["forecast"][-1]["date"], "2014-03-06")
+
+    def test_09c_integration_mac000002_forecast_dates(self):
+        response = self.client.get("/forecast/MAC000002")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        # Forecast should start on 2014-02-28 and end on 2014-03-06
+        self.assertEqual(data["forecast_start"], "2014-02-28")
+        self.assertEqual(data["forecast_end"], "2014-03-06")
+        self.assertEqual(len(data["forecast"]), 7)
+        self.assertEqual(data["forecast"][0]["date"], "2014-02-28")
+        self.assertEqual(data["forecast"][-1]["date"], "2014-03-06")
 
     @patch('api.v2.main.forecast_service.recursive_forecast')
     def test_10_insufficient_history_422(self, mock_forecast):
