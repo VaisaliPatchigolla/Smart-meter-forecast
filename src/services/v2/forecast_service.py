@@ -98,11 +98,16 @@ class ForecastService:
         peak_kwh = float(forecast_df.loc[peak_idx, 'predicted_consumption_kwh'])
         lowest_kwh = float(forecast_df.loc[lowest_idx, 'predicted_consumption_kwh'])
         
-        recent_avg = float(recent_history_df['consumption_kwh'].mean())
+        recent_7d_total = float(recent_history_df['consumption_kwh'].sum())
         
-        if avg_forecast > recent_avg * 1.05:
+        if recent_7d_total > 0:
+            vs_prior_7d_pct = ((total_forecast - recent_7d_total) / recent_7d_total) * 100
+        else:
+            vs_prior_7d_pct = 0.0
+
+        if vs_prior_7d_pct > 5:
             trend = "increasing"
-        elif avg_forecast < recent_avg * 0.95:
+        elif vs_prior_7d_pct < -5:
             trend = "decreasing"
         else:
             trend = "stable"
@@ -115,7 +120,8 @@ class ForecastService:
             "peak_consumption_kwh": round(peak_kwh, 2),
             "lowest_consumption_kwh": round(lowest_kwh, 2),
             "trend": trend,
-            "prediction_interval": "Prediction interval not currently available."
+            "vs_prior_7d_pct": round(vs_prior_7d_pct, 2),
+            "prediction_interval": "Prediction range derived from 28-day historical volatility."
         }
 
     def recursive_forecast(self, household_id: str, forecast_origin=None) -> dict:
@@ -136,6 +142,13 @@ class ForecastService:
         count_actual = len(valid_history)
         
         recent_values = valid_history['consumption_kwh'].values[-28:].tolist()
+        
+        # Methodology: Prediction range is derived from the household's recent 28-day 
+        # historical standard deviation to capture individualized volatility.
+        # We use a 1.28 multiplier (approx 80% confidence interval under normal distribution)
+        # to provide a realistic visual planning range without being overly wide.
+        recent_std = np.std(recent_values, ddof=1) if len(recent_values) > 1 else 2.53
+        margin_of_error = 1.28 * recent_std
         
         predictions = []
         current_date = latest_date
@@ -177,7 +190,9 @@ class ForecastService:
             predictions.append({
                 "date": current_date.strftime('%Y-%m-%d'),
                 "forecast_day": day,
-                "predicted_consumption_kwh": round(pred_kwh, 4)
+                "predicted_consumption_kwh": round(pred_kwh, 4),
+                "predicted_upper_kwh": round(pred_kwh + margin_of_error, 4),
+                "predicted_lower_kwh": round(max(0.0, pred_kwh - margin_of_error), 4)
             })
             
             recent_values.append(pred_kwh)

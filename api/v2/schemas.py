@@ -13,6 +13,8 @@ class ForecastPoint(BaseModel):
     date: str
     forecast_day: int
     predicted_consumption_kwh: float
+    predicted_upper_kwh: Optional[float] = None
+    predicted_lower_kwh: Optional[float] = None
 
 class ForecastInsights(BaseModel):
     total_7d_consumption: float
@@ -22,6 +24,7 @@ class ForecastInsights(BaseModel):
     peak_consumption_kwh: float
     lowest_consumption_kwh: float
     trend: str
+    vs_prior_7d_pct: float
     prediction_interval: str
 
 class ForecastResponse(BaseModel):

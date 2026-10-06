@@ -3,8 +3,8 @@
 import { useState, useEffect, useMemo, UIEvent } from 'react';
 import { getHealth, getHouseholds, getForecast, getMetrics, getHistory } from '../lib/api';
 import { HealthResponse, HouseholdsResponse, ForecastResponse, MetricsResponse, HistoryResponse } from '../types';
-import { ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine } from 'recharts';
-import { BarChart2, RefreshCw, User, Calendar, Clock, Target, BarChart, TrendingUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine } from 'recharts';
+import { BarChart2, RefreshCw, User, Calendar, Clock, Target, BarChart, TrendingUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Calculator } from 'lucide-react';
 
 interface ChartPoint {
   dateStr: string;
@@ -12,6 +12,9 @@ interface ChartPoint {
   fullDate: string;
   actual_kwh: number | null;
   expected_kwh: number | null;
+  predicted_range?: [number, number] | null;
+  predicted_upper_kwh?: number | null;
+  predicted_lower_kwh?: number | null;
   isConnectionPoint: boolean;
   isPartialDay: boolean;
 }
@@ -28,10 +31,10 @@ const BoundaryLabel = (props: any) => {
   if (!viewBox) return null;
   return (
     <g>
-      <text x={viewBox.x - 8} y={viewBox.y + 15} textAnchor="end" fontSize={10} fontWeight="bold" fill="#475569">Feb 27, 2014</text>
-      <text x={viewBox.x - 8} y={viewBox.y + 27} textAnchor="end" fontSize={9} fill="#64748b">Last actual</text>
-      <text x={viewBox.x + 8} y={viewBox.y + 15} textAnchor="start" fontSize={10} fontWeight="bold" fill="#10b981">Feb 28, 2014</text>
-      <text x={viewBox.x + 8} y={viewBox.y + 27} textAnchor="start" fontSize={9} fill="#10b981">First predicted</text>
+      <text x={viewBox.x - 8} y={viewBox.y - 12} textAnchor="end" fontSize={10} fontWeight="bold" fill="#475569">Feb 27, 2014</text>
+      <text x={viewBox.x - 8} y={viewBox.y - 2} textAnchor="end" fontSize={9} fill="#64748b">Last actual</text>
+      <text x={viewBox.x + 8} y={viewBox.y - 12} textAnchor="start" fontSize={10} fontWeight="bold" fill="#10b981">Feb 28, 2014</text>
+      <text x={viewBox.x + 8} y={viewBox.y - 2} textAnchor="start" fontSize={9} fill="#10b981">First predicted</text>
     </g>
   );
 };
@@ -69,6 +72,11 @@ const CustomTooltip = ({ active, payload, label }: any) => {
               <span className="font-bold">{data.expected_kwh.toFixed(2)} kWh</span>
             </div>
           )}
+          {data.predicted_upper_kwh !== null && data.predicted_upper_kwh !== undefined && !data.isConnectionPoint && (
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+              Range: {data.predicted_lower_kwh?.toFixed(2)} - {data.predicted_upper_kwh?.toFixed(2)} kWh
+            </div>
+          )}
         </div>
       </div>
     );
@@ -92,6 +100,7 @@ export default function Dashboard() {
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   const [startIndex, setStartIndex] = useState(0);
+  const [assumedRate, setAssumedRate] = useState<number>(0.15);
 
   // Initial Load
   useEffect(() => {
@@ -192,11 +201,17 @@ export default function Dashboard() {
           fullDate: pt.date,
           actual_kwh: null,
           expected_kwh: pt.predicted_consumption_kwh,
+          predicted_range: [(pt as any).predicted_lower_kwh, (pt as any).predicted_upper_kwh],
+          predicted_upper_kwh: (pt as any).predicted_upper_kwh,
+          predicted_lower_kwh: (pt as any).predicted_lower_kwh,
           isConnectionPoint: false,
           isPartialDay: isPartial
         };
       } else {
         combined[pt.date].expected_kwh = pt.predicted_consumption_kwh;
+        combined[pt.date].predicted_range = [(pt as any).predicted_lower_kwh, (pt as any).predicted_upper_kwh];
+        combined[pt.date].predicted_upper_kwh = (pt as any).predicted_upper_kwh;
+        combined[pt.date].predicted_lower_kwh = (pt as any).predicted_lower_kwh;
         combined[pt.date].isPartialDay = isPartial;
       }
     });
@@ -207,6 +222,9 @@ export default function Dashboard() {
       const lastCompleteDate = completeHistory[completeHistory.length - 1].date;
       if (combined[lastCompleteDate]) {
         combined[lastCompleteDate].expected_kwh = combined[lastCompleteDate].actual_kwh;
+        combined[lastCompleteDate].predicted_range = [combined[lastCompleteDate].actual_kwh as number, combined[lastCompleteDate].actual_kwh as number];
+        combined[lastCompleteDate].predicted_upper_kwh = combined[lastCompleteDate].actual_kwh;
+        combined[lastCompleteDate].predicted_lower_kwh = combined[lastCompleteDate].actual_kwh;
         combined[lastCompleteDate].isConnectionPoint = true;
       }
     }
@@ -255,7 +273,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F0F4F8] dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-200 flex flex-col">
+    <div className="h-screen w-screen overflow-hidden bg-[#F0F4F8] dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-200 flex flex-col">
       
       {/* 1. HEADER */}
       <header className="bg-[#0f294d] text-white px-6 py-2.5 flex items-center justify-between shadow-md shrink-0">
@@ -267,7 +285,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="flex items-center gap-3 text-xs text-blue-100">
-          <span>Data Through: 28 Feb 2014</span>
+          <span>Data Through: 27 Feb 2014</span>
           <button onClick={refreshPage} className="hover:text-white transition-colors" aria-label="Refresh">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -284,10 +302,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      <main className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-4 space-y-4 flex-1 flex flex-col">
+      <main className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-2.5 flex flex-col gap-3 overflow-hidden">
         
         {/* 2. COMPACT FORECAST CONTEXT BAR */}
-        <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-3 flex flex-wrap items-center justify-between gap-6 shrink-0">
+        <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
           
           <div className="flex items-center gap-3 flex-1 min-w-[200px]">
             <div className="bg-blue-50 dark:bg-slate-800 p-2 rounded-full text-blue-600 dark:text-blue-400">
@@ -344,10 +362,10 @@ export default function Dashboard() {
 
         {/* 3. MAIN THREE-COLUMN LAYOUT */}
         {forecast && chartData.length > 0 && (
-          <div className="flex flex-col lg:flex-row gap-4 items-stretch flex-1 min-h-0">
+          <div className="grid grid-cols-1 lg:grid-cols-[180px_1fr_260px] gap-3 items-stretch shrink-0">
             
             {/* LEFT COLUMN: History Controls */}
-            <div className="w-full lg:w-[180px] flex flex-col gap-4 flex-shrink-0">
+            <div className="flex flex-col gap-4">
               
               <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -410,7 +428,7 @@ export default function Dashboard() {
             </div>
 
             {/* CENTER COLUMN: Main Chart */}
-            <div className="flex-1 min-w-0 flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm relative">
+            <div className="flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm relative min-w-0">
               <div className="p-3 border-b border-slate-100 dark:border-slate-800 flex items-center">
                 <BarChart className="w-4 h-4 text-blue-600 mr-2" />
                 <h2 className="text-sm font-bold text-[#0f294d] dark:text-white">Actual vs Forecast Consumption (kWh)</h2>
@@ -433,9 +451,13 @@ export default function Dashboard() {
                     </div>
                     <span className="text-xs font-bold text-slate-800">Forecast (7 Days)</span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-3 bg-emerald-500 opacity-20"></div>
+                    <span className="text-xs font-bold text-slate-800">Forecast Range</span>
+                  </div>
                 </div>
 
-                <div className="w-full flex-1 min-h-0 relative">
+                <div className="w-full min-h-[220px] flex-1 relative">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 10, bottom: 25 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -474,6 +496,14 @@ export default function Dashboard() {
                           activeDot={{ r: 6, strokeWidth: 0, fill: '#3b82f6' }}
                           isAnimationActive={false}
                         />
+                        <Area 
+                          type="monotone" 
+                          dataKey="predicted_range" 
+                          stroke="none" 
+                          fill="#10b981" 
+                          fillOpacity={0.15} 
+                          isAnimationActive={false}
+                        />
                         <Line 
                           type="linear" 
                           dataKey="expected_kwh" 
@@ -496,59 +526,30 @@ export default function Dashboard() {
             </div>
 
             {/* RIGHT COLUMN: Table */}
-            <div className="w-full lg:w-[260px] flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex-shrink-0 self-start">
+            <div className="flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm h-full overflow-hidden">
               <div className="p-3 flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-[#0f294d] dark:text-blue-400" />
                 <h2 className="text-sm font-bold text-[#0f294d] dark:text-white">7-Day Forecast</h2>
               </div>
               
-              <div className="flex-1 overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-[#42618a] text-white">
-                    <tr>
-                      <th className="py-2 px-3 w-[25%] font-semibold text-[10px] border-r border-[#5174a1]">Day</th>
-                      <th className="py-2 px-3 w-[38%] whitespace-nowrap font-semibold text-[10px] border-r border-[#5174a1]">Date</th>
-                      <th className="py-2 px-3 w-[37%] font-semibold text-[10px] text-center">Expected (kWh)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {forecast.forecast.map(pt => (
-                      <tr key={pt.date} className="hover:bg-slate-50 dark:hover:bg-slate-800">
-                        <td className="py-2 px-3 font-medium text-slate-800 text-[11px] whitespace-nowrap">Day {pt.forecast_day}</td>
-                        <td className="py-2 px-3 text-slate-600 text-[11px] whitespace-nowrap">{pt.date}</td>
-                        <td className="py-2 px-3 font-bold text-slate-800 text-center text-[11px]">{pt.predicted_consumption_kwh.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="flex-1 flex flex-col">
+                <div className="flex bg-[#42618a] text-white sticky top-0 z-10">
+                  <div className="py-1.5 px-2 w-[25%] font-semibold text-[10px] border-r border-[#5174a1]">Day</div>
+                  <div className="py-1.5 px-2 w-[38%] whitespace-nowrap font-semibold text-[10px] border-r border-[#5174a1]">Date</div>
+                  <div className="py-1.5 px-2 w-[37%] font-semibold text-[10px] text-center">Expected (kWh)</div>
+                </div>
+                <div className="flex-1 flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
+                  {forecast.forecast.map(pt => (
+                    <div key={pt.date} className="flex-1 flex items-center hover:bg-slate-50 dark:hover:bg-slate-800">
+                      <div className="py-1.5 px-2 w-[25%] font-medium text-slate-800 text-[11px] whitespace-nowrap">Day {pt.forecast_day}</div>
+                      <div className="py-1.5 px-2 w-[38%] text-slate-600 text-[11px] whitespace-nowrap">{pt.date}</div>
+                      <div className="py-1.5 px-2 w-[37%] font-bold text-slate-800 text-center text-[11px]">{pt.predicted_consumption_kwh.toFixed(2)}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 grid grid-cols-3 divide-x divide-slate-200 dark:divide-slate-700">
-                <div className="p-2 flex flex-col items-center text-center justify-center">
-                  <span className="text-[9px] font-bold text-slate-500 uppercase flex items-center gap-1">
-                    <span className="text-sm">Σ</span> Total
-                  </span>
-                  <div className="font-black text-slate-900 mt-1 text-sm">
-                    {forecast.insights.total_7d_consumption.toFixed(2)} <span className="text-[8px] font-medium text-slate-500">kWh</span>
-                  </div>
-                </div>
-                <div className="p-2 flex flex-col items-center text-center justify-center">
-                  <span className="text-[9px] font-bold text-slate-500 uppercase flex items-center gap-1">
-                    <BarChart className="w-3 h-3" /> Avg / Day
-                  </span>
-                  <div className="font-black text-slate-900 mt-1 text-sm">
-                    {forecast.insights.average_daily_consumption.toFixed(2)} <span className="text-[8px] font-medium text-slate-500">kWh</span>
-                  </div>
-                </div>
-                <div className="p-2 flex flex-col items-center text-center justify-center">
-                  <span className="text-[9px] font-bold text-slate-500 uppercase flex items-center gap-1">
-                    <TrendingUp className="w-3 h-3 text-blue-500" /> Peak <span className="text-[7px] opacity-70">(D{(new Date(forecast.insights.peak_consumption_day).getTime() - new Date(forecast.forecast_start).getTime()) / (1000 * 3600 * 24) + 1})</span>
-                  </span>
-                  <div className="font-black text-slate-900 mt-1 text-sm">
-                    {forecast.insights.peak_consumption_kwh.toFixed(2)} <span className="text-[8px] font-medium text-slate-500">kWh</span>
-                  </div>
-                </div>
-              </div>
+
             </div>
 
           </div>
@@ -556,11 +557,11 @@ export default function Dashboard() {
 
         {/* 3.5 INSIGHTS AND EXPLANATION */}
         {forecast && (
-          <div className="flex flex-col lg:flex-row gap-4 items-stretch shrink-0">
-            {/* Consumption Insights */}
-            <div className="flex-[2] bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
-              <h3 className="font-bold text-[#0f294d] dark:text-white text-sm mb-3">Consumption Insights</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          <div className="flex flex-col lg:flex-row gap-3 items-stretch shrink-0">
+            <div className="flex-[1.5] bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm pt-3 px-3 pb-2 flex flex-col">
+              <h3 className="font-bold text-[#0f294d] dark:text-white text-sm mb-1.5 shrink-0">Consumption Insights</h3>
+              <div className="flex flex-col">
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 w-full">
                 <div>
                   <p className="text-[10px] font-bold text-slate-500 uppercase">Expected 7-Day Total</p>
                   <p className="font-black text-lg text-slate-900 dark:text-white">{forecast.insights.total_7d_consumption.toFixed(2)} <span className="text-[10px] font-semibold text-slate-500">kWh</span></p>
@@ -577,19 +578,56 @@ export default function Dashboard() {
                   <p className="text-[10px] font-bold text-slate-500 uppercase">Lowest Expected</p>
                   <p className="font-black text-lg text-slate-900 dark:text-white">{forecast.insights.lowest_consumption_kwh.toFixed(2)} <span className="text-[10px] font-semibold text-slate-500">kWh</span></p>
                 </div>
-                <div>
+                <div className="col-span-2">
                   <p className="text-[10px] font-bold text-slate-500 uppercase">Trend</p>
-                  <p className="font-black text-lg text-slate-900 dark:text-white capitalize">{forecast.insights.trend}</p>
+                  <div className="flex flex-col mt-0.5">
+                    <span className="font-black text-lg text-slate-900 dark:text-white capitalize leading-tight">
+                      {forecast.insights.trend}
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 leading-tight">
+                      {forecast.insights.vs_prior_7d_pct > 0 ? '+' : ''}{forecast.insights.vs_prior_7d_pct.toFixed(1)}% vs. prior 7 days
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* About this forecast */}
-            <div className="flex-1 bg-blue-50 dark:bg-slate-800/50 rounded-xl border border-blue-100 dark:border-slate-700 p-4">
-              <h3 className="font-bold text-[#0f294d] dark:text-blue-400 text-sm mb-2">About this forecast</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                This forecast uses historical household electricity consumption patterns to estimate consumption for the next 7 days. Forecast performance is based on historical backtesting, and actual future performance may vary.
-              </p>
+            {/* Estimated Cost */}
+            <div className="flex-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm pt-3 px-3 pb-2 flex flex-col">
+              <div className="flex items-center gap-2 mb-1.5 text-emerald-600 dark:text-emerald-400">
+                <Calculator className="w-4 h-4" />
+                <h3 className="font-bold text-sm">Estimated 7-Day Energy Cost</h3>
+              </div>
+              <div className="grid grid-cols-3 gap-3 w-full items-end mb-1">
+                <div>
+                  <p className="font-black text-2xl text-slate-900 dark:text-white leading-none">${(forecast.insights.total_7d_consumption * assumedRate).toFixed(2)}</p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase mt-1">7-Day Cost</p>
+                </div>
+                <div>
+                  <p className="font-bold text-sm text-slate-700 dark:text-slate-300 leading-none">${(forecast.insights.total_7d_consumption * assumedRate / 7).toFixed(2)}<span className="text-[10px] font-semibold text-slate-500">/day</span></p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase mt-1.5">Avg Daily Cost</p>
+                </div>
+                <div>
+                  <p className="font-bold text-sm text-slate-700 dark:text-slate-300 leading-none">${(forecast.insights.peak_consumption_kwh * assumedRate).toFixed(2)}<span className="text-[10px] font-semibold text-slate-500">/day</span></p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase mt-1.5">Highest Daily Cost</p>
+                </div>
+              </div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-col gap-0.5 mt-auto">
+                <div className="flex items-center gap-1.5">
+                  Based on assumed rate: $
+                  <input 
+                    type="number" 
+                    value={assumedRate} 
+                    onChange={(e) => setAssumedRate(Number(e.target.value))} 
+                    className="w-14 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                    step="0.01"
+                    min="0"
+                  />
+                  / kWh
+                </div>
+                <div className="italic text-[9px] text-slate-400">Demo estimate; actual utility rates vary.</div>
+              </div>
             </div>
           </div>
         )}

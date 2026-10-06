@@ -22,6 +22,7 @@ export interface ForecastInsights {
   peak_consumption_kwh: number;
   lowest_consumption_kwh: number;
   trend: string;
+  vs_prior_7d_pct: number;
   prediction_interval: string;
 }
 
